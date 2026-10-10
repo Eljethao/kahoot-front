@@ -6,6 +6,7 @@ import type { LobbyPlayer, QuestionPayload, QuestionResults } from '../../types'
 import { ANSWER_COLORS } from '../../lib/answerStyles';
 import { cn } from '../../lib/utils';
 import { AnswerShape } from '../../components/game/AnswerShape';
+import { Avatar } from '../../components/game/Avatar';
 import { Button } from '../../components/ui/Button';
 
 const formatPin = (pin: string) => `${pin.slice(0, 3)} ${pin.slice(3)}`;
@@ -97,9 +98,7 @@ export const HostLobby: React.FC<{
                                             title={`Remove ${player.name}`}
                                             className="group flex items-center gap-2 rounded-full bg-white/10 py-2 pl-2 pr-4 text-lg font-bold transition-colors hover:bg-rose-500/90 cursor-pointer"
                                         >
-                                            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-2xl">
-                                                {player.avatar}
-                                            </span>
+                                            <Avatar avatar={player.avatar} className="h-9 w-9 bg-white/15 text-2xl" />
                                             {player.name}
                                             <X className="w-4 h-4 -ml-1 opacity-0 transition-opacity group-hover:opacity-100" />
                                         </button>

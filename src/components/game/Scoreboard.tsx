@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { LeaderboardEntry } from '../../types';
 import { cn } from '../../lib/utils';
 import { AnimatedNumber } from './AnimatedNumber';
+import { Avatar } from './Avatar';
 
 // How long the old standings stay up before players slide to their new places.
 const REORDER_DELAY_MS = 1400;
@@ -63,7 +64,7 @@ export const Scoreboard: React.FC<{
                         >
                             {rank}
                         </span>
-                        <span className="text-3xl leading-none">{entry.avatar}</span>
+                        <Avatar avatar={entry.avatar} className="h-10 w-10 text-3xl leading-none" />
                         <span className="flex-1 min-w-0 truncate text-lg sm:text-xl font-bold">{entry.playerName}</span>
 
                         {settled && reorder && moved !== 0 && (

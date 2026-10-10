@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown, ChevronUp, Clock, Medal, Trophy, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Clock, Medal, Shuffle, Trophy, X } from 'lucide-react';
 import type { LeaderboardEntry, PlayerResult, PlayerStanding, PlayerSummary } from '../../types';
 import { ANSWER_COLORS } from '../../lib/answerStyles';
+import { AVATAR_STYLES, type AvatarStyleKey, parseAvatar, randomSeed, toAvatar } from '../../lib/avatars';
 import { cn, ordinal } from '../../lib/utils';
+import { Button } from '../../components/ui/Button';
 import { AnswerShape } from '../../components/game/AnswerShape';
 import { AnimatedNumber } from '../../components/game/AnimatedNumber';
+import { Avatar } from '../../components/game/Avatar';
 import { Confetti } from '../../components/game/Confetti';
 import { Rays } from '../../components/game/Podium';
 
@@ -255,7 +258,7 @@ export const PlayerFinishedView: React.FC<{
                             )}
                         >
                             <span className="tabular w-5 font-bold text-slate-400">{entry.rank}</span>
-                            <span className="text-xl">{entry.avatar}</span>
+                            <Avatar avatar={entry.avatar} className="h-8 w-8 text-xl" />
                             <span className="flex-1 truncate font-semibold">{entry.playerName}</span>
                             <span className="tabular font-bold">{entry.totalPoints.toLocaleString()}</span>
                         </li>
@@ -349,3 +352,96 @@ export const PlayerIntroView: React.FC<{
         </div>
     </div>
 );
+
+const AVATAR_CHOICES = 12;
+const newSeeds = () => Array.from({ length: AVATAR_CHOICES }, randomSeed);
+
+// Shown right after joining (and when the player taps their avatar in the lobby).
+// The choices are the same seeds drawn in the chosen style, so switching style
+// keeps the selected spot.
+export const AvatarPickerView: React.FC<{
+    playerName: string;
+    avatar: string;
+    saving: boolean;
+    error: string;
+    onConfirm: (avatar: string) => void;
+}> = ({ playerName, avatar, saving, error, onConfirm }) => {
+    // Start from the player's current avatar, if it is one the picker can draw.
+    const [initial] = useState(() => {
+        const current = parseAvatar(avatar);
+        const seeds = newSeeds();
+        if (current) seeds[0] = current.seed;
+        return { styleKey: current?.styleKey ?? AVATAR_STYLES[0].key, seeds };
+    });
+    const [styleKey, setStyleKey] = useState<AvatarStyleKey>(initial.styleKey);
+    const [seeds, setSeeds] = useState(initial.seeds);
+    const [selectedSeed, setSelectedSeed] = useState(initial.seeds[0]);
+    const selected = toAvatar(styleKey, selectedSeed);
+
+    const shuffle = () => {
+        const next = newSeeds();
+        setSeeds(next);
+        setSelectedSeed(next[0]);
+    };
+
+    return (
+        <div className="flex-1 flex flex-col items-center px-4 py-6">
+            <h2 className="text-2xl font-extrabold">Pick your avatar</h2>
+            <p className="mt-1 max-w-full truncate font-semibold text-white/70">{playerName}</p>
+
+            <motion.div
+                key={selected}
+                initial={{ scale: 0.7, opacity: 0.4 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+                className="mt-5"
+            >
+                <Avatar avatar={selected} className="h-32 w-32 ring-4 ring-white/30 shadow-xl shadow-black/30" />
+            </motion.div>
+
+            <div className="mt-6 flex w-full max-w-sm gap-1 rounded-full bg-black/20 p-1">
+                {AVATAR_STYLES.map((style) => (
+                    <button
+                        key={style.key}
+                        onClick={() => setStyleKey(style.key)}
+                        className={cn(
+                            'flex-1 rounded-full py-2 text-sm font-bold transition-colors cursor-pointer',
+                            style.key === styleKey ? 'bg-white text-game-900' : 'text-white/70 hover:text-white',
+                        )}
+                    >
+                        {style.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="mt-4 grid w-full max-w-sm grid-cols-4 gap-3">
+                {seeds.map((seed) => (
+                    <motion.button
+                        key={seed}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setSelectedSeed(seed)}
+                        aria-label="Choose this avatar"
+                        aria-pressed={seed === selectedSeed}
+                        className={cn(
+                            'aspect-square rounded-full p-1 transition-all cursor-pointer',
+                            seed === selectedSeed ? 'bg-white scale-105' : 'bg-white/10 hover:bg-white/20',
+                        )}
+                    >
+                        <Avatar avatar={toAvatar(styleKey, seed)} className="h-full w-full" />
+                    </motion.button>
+                ))}
+            </div>
+
+            {error && <p className="mt-4 text-center font-semibold text-rose-200">{error}</p>}
+
+            <div className="mt-6 flex w-full max-w-sm gap-3">
+                <Button variant="glass" size="lg" onClick={shuffle} disabled={saving} aria-label="Show other avatars">
+                    <Shuffle className="h-5 w-5" />
+                </Button>
+                <Button variant="light" size="lg" onClick={() => onConfirm(selected)} isLoading={saving} className="flex-1 font-extrabold">
+                    Let's go!
+                </Button>
+            </div>
+        </div>
+    );
+};

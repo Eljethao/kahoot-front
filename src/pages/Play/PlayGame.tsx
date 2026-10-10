@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Pencil } from 'lucide-react';
 import { gameService, isNotFound, questionTimes } from '../../services/gameService';
 import { playerSession } from '../../lib/playerSession';
 import { useCountdown } from '../../hooks/useCountdown';
@@ -10,10 +11,11 @@ import type { LeaderboardEntry, PlayerResult, PlayerStanding, PlayerState, Playe
 import { Button } from '../../components/ui/Button';
 import { Logo } from '../../components/ui/Logo';
 import { AnswerShape } from '../../components/game/AnswerShape';
+import { Avatar } from '../../components/game/Avatar';
 import { GameBackground } from '../../components/game/GameBackground';
-import { PlayerAnsweredView, PlayerFinishedView, PlayerIntroView, PlayerResultView } from './PlayViews';
+import { AvatarPickerView, PlayerAnsweredView, PlayerFinishedView, PlayerIntroView, PlayerResultView } from './PlayViews';
 
-type View = 'loading' | 'join' | 'lobby' | 'question' | 'answered' | 'result' | 'finished';
+type View = 'loading' | 'join' | 'avatar' | 'lobby' | 'question' | 'answered' | 'result' | 'finished';
 
 const PlayGame: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -32,6 +34,8 @@ const PlayGame: React.FC = () => {
     const [joining, setJoining] = useState(false);
     const [playerName, setPlayerName] = useState('');
     const [avatar, setAvatar] = useState('');
+    const [savingAvatar, setSavingAvatar] = useState(false);
+    const [avatarError, setAvatarError] = useState('');
     const [question, setQuestion] = useState<QuestionPayload | null>(null);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [answerError, setAnswerError] = useState('');
@@ -97,7 +101,8 @@ const PlayGame: React.FC = () => {
             setPlayerName(state.playerName);
             setAvatar(state.avatar);
             if (state.phase === 'lobby') {
-                setView('lobby');
+                // Don't close the avatar picker; the player is still in the lobby.
+                setView((current) => (current === 'avatar' ? current : 'lobby'));
             } else if (state.phase === 'question' && state.question) {
                 showQuestion(state.question, state.answered);
             } else if (state.phase === 'results') {
@@ -195,7 +200,8 @@ const PlayGame: React.FC = () => {
             playerSession.save({ token: joined.playerToken, pin: pin.trim(), sessionId: joined.sessionId });
             setPlayerName(joined.playerName);
             setAvatar(joined.avatar);
-            setView('lobby');
+            setAvatarError('');
+            setView('avatar');
             setSessionId(joined.sessionId);
         } catch (error) {
             setJoinError(error instanceof Error ? error.message : 'Could not join the game');
@@ -208,6 +214,26 @@ const PlayGame: React.FC = () => {
         const token = tokenRef.current;
         backToJoin();
         if (token) await gameService.leaveGame(token).catch(() => undefined);
+    };
+
+    const handleAvatar = async (choice: string) => {
+        const token = tokenRef.current;
+        if (!token) return;
+        // A reload that started before this would bring back the old avatar.
+        versionRef.current++;
+        setSavingAvatar(true);
+        setAvatarError('');
+        try {
+            await gameService.setAvatar(token, choice);
+            setAvatar(choice);
+            // The game may have started meanwhile; then the question is already showing.
+            setView((current) => (current === 'avatar' ? 'lobby' : current));
+        } catch (error) {
+            if (isNotFound(error)) backToJoin('You are no longer in that game.');
+            else setAvatarError(error instanceof Error ? error.message : 'Could not save your avatar');
+        } finally {
+            setSavingAvatar(false);
+        }
     };
 
     const inIntro = view === 'question' && introTimer.secondsLeft > 0;
@@ -237,14 +263,14 @@ const PlayGame: React.FC = () => {
     };
 
     const selectedIndex = question?.question.answers.findIndex((a) => a.id === selectedAnswer) ?? -1;
-    const showPlayerBar = view !== 'join' && view !== 'loading' && view !== 'result' && !!playerName;
+    const showPlayerBar = view !== 'join' && view !== 'loading' && view !== 'avatar' && view !== 'result' && !!playerName;
 
     return (
         <GameBackground>
             {showPlayerBar && (
                 <div className="flex items-center justify-between gap-3 px-4 pt-4">
                     <div className="flex min-w-0 items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-4">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xl">{avatar}</span>
+                        <Avatar avatar={avatar} className="h-8 w-8 bg-white/15 text-xl" />
                         <span className="truncate font-bold">{playerName}</span>
                     </div>
                     {question && (view === 'question' || view === 'answered') && (
@@ -307,15 +333,33 @@ const PlayGame: React.FC = () => {
                 </div>
             )}
 
+            {view === 'avatar' && (
+                <AvatarPickerView
+                    playerName={playerName}
+                    avatar={avatar}
+                    saving={savingAvatar}
+                    error={avatarError}
+                    onConfirm={handleAvatar}
+                />
+            )}
+
             {view === 'lobby' && (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                    <motion.div
+                    <motion.button
                         animate={{ y: [0, -10, 0] }}
                         transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-                        className="flex h-28 w-28 items-center justify-center rounded-full bg-white/15 text-6xl ring-4 ring-white/20"
+                        onClick={() => {
+                            setAvatarError('');
+                            setView('avatar');
+                        }}
+                        aria-label="Change avatar"
+                        className="relative cursor-pointer"
                     >
-                        {avatar}
-                    </motion.div>
+                        <Avatar avatar={avatar} className="h-28 w-28 bg-white/15 text-6xl ring-4 ring-white/20" />
+                        <span className="absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center rounded-full bg-white text-game-900 shadow-lg">
+                            <Pencil className="h-4 w-4" />
+                        </span>
+                    </motion.button>
                     <h2 className="mt-8 text-3xl font-extrabold">You're in!</h2>
                     <p className="mt-2 text-lg text-white/70">See your name on screen?</p>
                     <button onClick={handleLeave} className="mt-12 text-sm font-semibold text-white/50 underline hover:text-white cursor-pointer">

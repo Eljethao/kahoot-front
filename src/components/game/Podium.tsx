@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Crown, Trophy } from 'lucide-react';
 import type { LeaderboardEntry } from '../../types';
 import { cn } from '../../lib/utils';
+import { Avatar } from './Avatar';
 import { Confetti } from './Confetti';
 
 export type PodiumStep = 'drumroll' | 'third' | 'second' | 'first';
@@ -95,7 +96,7 @@ export const Podium: React.FC<{ entries: LeaderboardEntry[]; onStep?: (step: Pod
                                         champion ? 'w-24 h-24 sm:w-28 sm:h-28 text-6xl ring-gold' : 'w-16 h-16 sm:w-20 sm:h-20 text-4xl ring-white/30',
                                     )}
                                 >
-                                    {entry.avatar}
+                                    <Avatar avatar={entry.avatar} className="h-full w-full" />
                                 </div>
                                 {champion && (
                                     <motion.div

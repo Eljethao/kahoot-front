@@ -148,6 +148,10 @@ export const gameService = {
         return rpc<JoinGameResult>('join_game', { p_pin: pin.trim(), p_name: playerName });
     },
 
+    async setAvatar(playerToken: string, avatar: string): Promise<void> {
+        await rpc('set_avatar', { p_player_token: playerToken, p_avatar: avatar });
+    },
+
     async getPlayerState(playerToken: string): Promise<PlayerState> {
         return rpc<PlayerState>('get_player_state', { p_player_token: playerToken });
     },
