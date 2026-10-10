@@ -26,7 +26,7 @@ const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) =
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" />} />
+      <Route path="/" element={<Navigate to="/play" replace />} />
       <Route
         path="/login"
         element={
@@ -76,6 +76,7 @@ function AppRoutes() {
         }
       />
       <Route path="/play" element={<PlayGame />} />
+      <Route path="*" element={<Navigate to="/play" replace />} />
     </Routes>
   );
 }
