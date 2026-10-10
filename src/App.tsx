@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/useAuth';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -52,6 +53,14 @@ function AppRoutes() {
       />
       <Route
         path="/quiz/create"
+        element={
+          <PrivateRoute>
+            <CreateQuiz />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/quiz/edit/:quizId"
         element={
           <PrivateRoute>
             <CreateQuiz />

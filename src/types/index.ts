@@ -43,17 +43,28 @@ export interface GameSession {
 
 export interface LeaderboardEntry {
     rank: number;
+    previousRank: number; // before the current question was scored
     playerName: string;
+    avatar: string;
     totalPoints: number;
+    lastPoints: number; // earned on the current question
+    streak: number; // correct answers in a row, as of the current question
+}
+
+export interface LobbyPlayer {
+    name: string;
+    avatar: string;
 }
 
 // The current question as players see it (no isCorrect).
-// Time left = timeLimit - (serverNow - startedAt); see questionDeadline().
+// startedAt is when answers open, a few seconds after the question is first
+// shown (the get-ready intro); see questionTimes().
 export interface QuestionPayload {
     question: {
         id: string;
         questionText: string;
         timeLimit: number;
+        points: number;
         answers: { id: string; answerText: string; order: number }[];
     };
     questionNumber: number;
@@ -85,7 +96,7 @@ export interface HostState {
     pin: string;
     quizTitle: string;
     phase: GamePhase;
-    players: string[];
+    players: LobbyPlayer[];
     answeredCount: number;
     question?: QuestionPayload; // question, results
     results?: QuestionResults; // results
@@ -95,25 +106,50 @@ export interface HostState {
 export interface PlayerStanding {
     totalPoints: number;
     rank: number;
+    previousRank: number; // before the current question was scored
     totalPlayers: number;
     behind: { playerName: string; points: number } | null; // the player one place ahead
+}
+
+// A player's own result for the question that just ended. pointsEarned is
+// basePoints + speedBonus + streakBonus + firstBonus.
+export interface PlayerResult {
+    answered: boolean;
+    isCorrect: boolean;
+    pointsEarned: number;
+    basePoints: number;
+    speedBonus: number;
+    streakBonus: number;
+    firstBonus: number;
+    streak: number; // correct answers in a row, including this one
+    correctAnswers: { answerText: string; index: number }[];
+}
+
+export interface PlayerSummary {
+    correctCount: number;
+    answeredCount: number;
+    totalQuestions: number;
+    bestStreak: number;
 }
 
 export interface PlayerState {
     sessionId: string;
     playerName: string;
+    avatar: string;
     phase: GamePhase;
     question?: QuestionPayload; // question
     answered?: boolean; // question
-    result?: { answered: boolean; isCorrect: boolean; pointsEarned: number }; // results
+    result?: PlayerResult; // results
     standing?: PlayerStanding; // results, finished
     leaderboard?: LeaderboardEntry[]; // finished
+    summary?: PlayerSummary; // finished
 }
 
 export interface JoinGameResult {
     sessionId: string;
     playerToken: string;
     playerName: string;
+    avatar: string;
 }
 
 export interface CreateQuizDto {

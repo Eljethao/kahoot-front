@@ -1,6 +1,46 @@
 @import "tailwindcss";
 
+/* Design tokens. Admin pages are light with one brand accent; game screens
+   use the deep "game" purples with the four answer colours. */
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-800: #5b21b6;
+  --color-brand-900: #4c1d95;
+
+  --color-game-700: #5b2bb5;
+  --color-game-800: #46178f;
+  --color-game-900: #2e0e63;
+  --color-game-950: #1c0742;
+
+  --color-answer-red: #e21b3c;
+  --color-answer-blue: #1368ce;
+  --color-answer-yellow: #d89e00;
+  --color-answer-green: #26890c;
+
+  --color-gold: #f5b700;
+  --color-silver: #c0c7d4;
+  --color-bronze: #d07a3c;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--color-slate-50);
+  color: var(--color-slate-900);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Numbers that count up or change should not shift sideways. */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

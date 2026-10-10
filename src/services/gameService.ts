@@ -4,6 +4,7 @@ import type {
     GameSession,
     HostState,
     JoinGameResult,
+    LobbyPlayer,
     PlayerState,
     QuestionPayload,
     QuestionResults,
@@ -27,11 +28,12 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
     return data as T;
 }
 
-// When the current question closes, in local time. Uses the server's own
-// elapsed time, so it works after a reload and with a wrong device clock.
-export function questionDeadline(payload: QuestionPayload): number {
-    const elapsed = Date.parse(payload.serverNow) - Date.parse(payload.startedAt);
-    return Date.now() + payload.question.timeLimit * 1000 - elapsed;
+// When answers open (after the get-ready intro) and when the question closes,
+// in local time. Uses the server's own clock difference, so it works after a
+// reload and with a wrong device clock.
+export function questionTimes(payload: QuestionPayload): { opensAt: number; deadline: number } {
+    const opensAt = Date.now() + Date.parse(payload.startedAt) - Date.parse(payload.serverNow);
+    return { opensAt, deadline: opensAt + payload.question.timeLimit * 1000 };
 }
 
 // supabase.channel() hands back the existing channel when a topic is already
@@ -116,10 +118,15 @@ export const gameService = {
         return rpc<GameFinishedPayload>('end_game', { p_session_id: sessionId });
     },
 
+    // Removes a player from the lobby (only before the game starts).
+    async kickPlayer(sessionId: string, playerName: string): Promise<void> {
+        await rpc('kick_player', { p_session_id: sessionId, p_player_name: playerName });
+    },
+
     subscribeAsHost(
         sessionId: string,
         handlers: {
-            onPlayersChanged: (players: string[]) => void;
+            onPlayersChanged: (players: LobbyPlayer[]) => void;
             onAnswerCount: (answeredCount: number, totalPlayers: number) => void;
             onReconnect: () => void;
         },
@@ -127,7 +134,7 @@ export const gameService = {
         return subscribe(
             `host:${sessionId}`,
             {
-                playersChanged: (data: { players: string[] }) => handlers.onPlayersChanged(data.players),
+                playersChanged: (data: { players: LobbyPlayer[] }) => handlers.onPlayersChanged(data.players),
                 answerCount: (data: { answeredCount: number; totalPlayers: number }) =>
                     handlers.onAnswerCount(data.answeredCount, data.totalPlayers),
             },
@@ -163,6 +170,7 @@ export const gameService = {
             onQuestion: (data: QuestionPayload) => void;
             onQuestionEnded: () => void;
             onGameFinished: () => void;
+            onPlayerKicked: (playerName: string) => void;
             onReconnect: () => void;
         },
     ) {
@@ -172,6 +180,7 @@ export const gameService = {
                 question: handlers.onQuestion,
                 questionEnded: () => handlers.onQuestionEnded(),
                 gameFinished: () => handlers.onGameFinished(),
+                playerKicked: (data: { playerName: string }) => handlers.onPlayerKicked(data.playerName),
             },
             handlers.onReconnect,
         );

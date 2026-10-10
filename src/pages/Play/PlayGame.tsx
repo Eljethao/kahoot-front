@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { gameService, isNotFound, questionDeadline } from '../../services/gameService';
+import { motion } from 'framer-motion';
+import { gameService, isNotFound, questionTimes } from '../../services/gameService';
 import { playerSession } from '../../lib/playerSession';
 import { useCountdown } from '../../hooks/useCountdown';
-import { ANSWER_COLORS, ANSWER_SHAPES } from '../../lib/answerStyles';
-import type { LeaderboardEntry, PlayerStanding, PlayerState, QuestionPayload } from '../../types';
-import { motion } from 'framer-motion';
+import { ANSWER_COLORS } from '../../lib/answerStyles';
+import { cn } from '../../lib/utils';
+import type { LeaderboardEntry, PlayerResult, PlayerStanding, PlayerState, PlayerSummary, QuestionPayload } from '../../types';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { Logo } from '../../components/ui/Logo';
+import { AnswerShape } from '../../components/game/AnswerShape';
+import { GameBackground } from '../../components/game/GameBackground';
+import { PlayerAnsweredView, PlayerFinishedView, PlayerIntroView, PlayerResultView } from './PlayViews';
 
 type View = 'loading' | 'join' | 'lobby' | 'question' | 'answered' | 'result' | 'finished';
-
-const ordinal = (n: number) => {
-    const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
-    return `${n}${suffix}`;
-};
 
 const PlayGame: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -32,63 +31,93 @@ const PlayGame: React.FC = () => {
     const [joinError, setJoinError] = useState('');
     const [joining, setJoining] = useState(false);
     const [playerName, setPlayerName] = useState('');
+    const [avatar, setAvatar] = useState('');
     const [question, setQuestion] = useState<QuestionPayload | null>(null);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [answerError, setAnswerError] = useState('');
-    const [result, setResult] = useState<PlayerState['result'] | null>(null);
+    const [result, setResult] = useState<PlayerResult | null>(null);
     const [standing, setStanding] = useState<PlayerStanding | null>(null);
+    const [summary, setSummary] = useState<PlayerSummary | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-    const { secondsLeft, start: startCountdown } = useCountdown();
+    const answerTimer = useCountdown(); // until the question closes
+    const introTimer = useCountdown(); // until answers open
+    const { start: startAnswerTimer } = answerTimer;
+    const { start: startIntroTimer } = introTimer;
 
     // The player token identifies this player to the database (players don't sign in).
     const tokenRef = useRef<string | null>(resumeFrom?.token ?? null);
     // Bumped on every state change, so a slow reload can't overwrite newer state.
     const versionRef = useRef(0);
     const questionIdRef = useRef<string | null>(null);
+    const playerNameRef = useRef('');
 
-    const backToJoin = useCallback((message = '') => {
-        playerSession.clear();
-        tokenRef.current = null;
-        setSessionId(null);
-        setView('join');
-        setJoinError(message);
-        startCountdown(null);
-    }, [startCountdown]);
+    useEffect(() => {
+        playerNameRef.current = playerName;
+    }, [playerName]);
 
-    const showQuestion = useCallback((payload: QuestionPayload, answered = false) => {
-        versionRef.current++;
-        if (questionIdRef.current !== payload.question.id) {
-            setSelectedAnswer(null);
-            setAnswerError('');
-        }
-        questionIdRef.current = payload.question.id;
-        setQuestion(payload);
-        setResult(null);
-        startCountdown(questionDeadline(payload));
-        setView(answered ? 'answered' : 'question');
-    }, [startCountdown]);
+    const startTimers = useCallback(
+        (payload: QuestionPayload | null) => {
+            const times = payload ? questionTimes(payload) : null;
+            startIntroTimer(times?.opensAt ?? null);
+            startAnswerTimer(times?.deadline ?? null);
+        },
+        [startIntroTimer, startAnswerTimer],
+    );
 
-    const applyState = useCallback((state: PlayerState) => {
-        setPlayerName(state.playerName);
-        if (state.phase === 'lobby') {
-            setView('lobby');
-        } else if (state.phase === 'question' && state.question) {
-            showQuestion(state.question, state.answered);
-        } else if (state.phase === 'results') {
-            setResult(state.result ?? null);
-            setStanding(state.standing ?? null);
-            setView('result');
-            startCountdown(null);
-        } else if (state.phase === 'finished') {
-            setStanding(state.standing ?? null);
-            setLeaderboard(state.leaderboard ?? []);
-            setView('finished');
-            startCountdown(null);
-            // Nothing more will happen in this game; a reload shows the join form.
+    const backToJoin = useCallback(
+        (message = '') => {
             playerSession.clear();
+            tokenRef.current = null;
             setSessionId(null);
-        }
-    }, [showQuestion, startCountdown]);
+            setView('join');
+            setJoinError(message);
+            startTimers(null);
+        },
+        [startTimers],
+    );
+
+    const showQuestion = useCallback(
+        (payload: QuestionPayload, answered = false) => {
+            versionRef.current++;
+            if (questionIdRef.current !== payload.question.id) {
+                setSelectedAnswer(null);
+                setAnswerError('');
+            }
+            questionIdRef.current = payload.question.id;
+            setQuestion(payload);
+            setResult(null);
+            startTimers(payload);
+            setView(answered ? 'answered' : 'question');
+        },
+        [startTimers],
+    );
+
+    const applyState = useCallback(
+        (state: PlayerState) => {
+            setPlayerName(state.playerName);
+            setAvatar(state.avatar);
+            if (state.phase === 'lobby') {
+                setView('lobby');
+            } else if (state.phase === 'question' && state.question) {
+                showQuestion(state.question, state.answered);
+            } else if (state.phase === 'results') {
+                setResult(state.result ?? null);
+                setStanding(state.standing ?? null);
+                setView('result');
+                startTimers(null);
+            } else if (state.phase === 'finished') {
+                setStanding(state.standing ?? null);
+                setSummary(state.summary ?? null);
+                setLeaderboard(state.leaderboard ?? []);
+                setView('finished');
+                startTimers(null);
+                // Nothing more will happen in this game; a reload shows the join form.
+                playerSession.clear();
+                setSessionId(null);
+            }
+        },
+        [showQuestion, startTimers],
+    );
 
     // Redraws from the database: after (re)connecting, when a question or the
     // game ends, and when the phone wakes up.
@@ -122,6 +151,9 @@ const PlayGame: React.FC = () => {
                 onQuestion: (payload) => showQuestion(payload),
                 onQuestionEnded: reloadSoon,
                 onGameFinished: reloadSoon,
+                onPlayerKicked: (name) => {
+                    if (name === playerNameRef.current) backToJoin('The host removed you from the game.');
+                },
                 onReconnect: () => void reload(),
             })
             .then((stop) => {
@@ -151,7 +183,7 @@ const PlayGame: React.FC = () => {
             unsubscribe?.();
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [sessionId, showQuestion, reload, reloadSoon]);
+    }, [sessionId, showQuestion, reload, reloadSoon, backToJoin]);
 
     const handleJoin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -162,6 +194,7 @@ const PlayGame: React.FC = () => {
             tokenRef.current = joined.playerToken;
             playerSession.save({ token: joined.playerToken, pin: pin.trim(), sessionId: joined.sessionId });
             setPlayerName(joined.playerName);
+            setAvatar(joined.avatar);
             setView('lobby');
             setSessionId(joined.sessionId);
         } catch (error) {
@@ -177,9 +210,12 @@ const PlayGame: React.FC = () => {
         if (token) await gameService.leaveGame(token).catch(() => undefined);
     };
 
+    const inIntro = view === 'question' && introTimer.secondsLeft > 0;
+    const timeUp = answerTimer.secondsLeft === 0;
+
     const handleAnswer = async (answerId: string) => {
         const token = tokenRef.current;
-        if (!token || !question || selectedAnswer || secondsLeft === 0) return;
+        if (!token || !question || selectedAnswer || inIntro || timeUp) return;
 
         const questionId = question.question.id;
         versionRef.current++;
@@ -201,211 +237,162 @@ const PlayGame: React.FC = () => {
     };
 
     const selectedIndex = question?.question.answers.findIndex((a) => a.id === selectedAnswer) ?? -1;
+    const showPlayerBar = view !== 'join' && view !== 'loading' && view !== 'result' && !!playerName;
 
     return (
-        <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden relative">
-            {/* Background */}
-            <div className="absolute inset-0 z-0">
-                <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black" />
-            </div>
-
-            <div className="relative z-10 min-h-screen flex flex-col">
-                {view !== 'join' && view !== 'loading' && playerName && (
-                    <div className="px-4 pt-4 text-sm font-bold text-white/60">{playerName}</div>
-                )}
-
-                {view === 'loading' && (
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+        <GameBackground>
+            {showPlayerBar && (
+                <div className="flex items-center justify-between gap-3 px-4 pt-4">
+                    <div className="flex min-w-0 items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-4">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xl">{avatar}</span>
+                        <span className="truncate font-bold">{playerName}</span>
                     </div>
-                )}
+                    {question && (view === 'question' || view === 'answered') && (
+                        <span className="tabular shrink-0 rounded-full bg-white/10 px-3 py-1 text-sm font-bold">
+                            {question.questionNumber}/{question.totalQuestions}
+                        </span>
+                    )}
+                </div>
+            )}
 
-                {view === 'join' && (
-                    <div className="flex-1 flex items-center justify-center p-4">
-                        <motion.form
-                            onSubmit={handleJoin}
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
-                        >
-                            <h1 className="text-3xl font-bold text-slate-900 text-center mb-8">Join Game</h1>
-                            {joinError && (
-                                <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl mb-4 text-sm font-medium text-center">
-                                    {joinError}
-                                </div>
+            {view === 'loading' && (
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+                </div>
+            )}
+
+            {view === 'join' && (
+                <div className="flex-1 flex flex-col items-center justify-center gap-8 p-4">
+                    <Logo inverted className="scale-125" />
+                    <motion.form
+                        onSubmit={handleJoin}
+                        initial={{ scale: 0.95, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="w-full max-w-sm rounded-3xl bg-white p-6 text-slate-900 shadow-2xl shadow-black/30"
+                    >
+                        {joinError && (
+                            <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-600">
+                                {joinError}
+                            </div>
+                        )}
+                        <div className="space-y-3">
+                            <input
+                                aria-label="Game PIN"
+                                placeholder="Game PIN"
+                                value={pin}
+                                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                                inputMode="numeric"
+                                maxLength={6}
+                                className="tabular h-14 w-full rounded-xl border-2 border-slate-200 text-center text-2xl font-extrabold tracking-[0.3em] placeholder:tracking-normal placeholder:font-bold placeholder:text-slate-300 focus:border-game-800 focus:outline-none"
+                            />
+                            <input
+                                aria-label="Nickname"
+                                placeholder="Nickname"
+                                value={nickname}
+                                onChange={(e) => setNickname(e.target.value)}
+                                maxLength={30}
+                                autoFocus={!!pin}
+                                className="h-14 w-full rounded-xl border-2 border-slate-200 text-center text-xl font-bold placeholder:text-slate-300 focus:border-game-800 focus:outline-none"
+                            />
+                            <Button
+                                type="submit"
+                                disabled={pin.length !== 6 || !nickname.trim()}
+                                isLoading={joining}
+                                className="h-14 w-full bg-slate-900 text-lg hover:bg-slate-800"
+                            >
+                                Enter
+                            </Button>
+                        </div>
+                    </motion.form>
+                </div>
+            )}
+
+            {view === 'lobby' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                    <motion.div
+                        animate={{ y: [0, -10, 0] }}
+                        transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                        className="flex h-28 w-28 items-center justify-center rounded-full bg-white/15 text-6xl ring-4 ring-white/20"
+                    >
+                        {avatar}
+                    </motion.div>
+                    <h2 className="mt-8 text-3xl font-extrabold">You're in!</h2>
+                    <p className="mt-2 text-lg text-white/70">See your name on screen?</p>
+                    <button onClick={handleLeave} className="mt-12 text-sm font-semibold text-white/50 underline hover:text-white cursor-pointer">
+                        Leave game
+                    </button>
+                </div>
+            )}
+
+            {view === 'question' && question && inIntro && (
+                <PlayerIntroView
+                    questionNumber={question.questionNumber}
+                    totalQuestions={question.totalQuestions}
+                    questionText={question.question.questionText}
+                    points={question.question.points}
+                    secondsLeft={introTimer.secondsLeft}
+                />
+            )}
+
+            {view === 'question' && question && !inIntro && (
+                <div className="flex-1 flex flex-col gap-4 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <p className="text-xl font-bold leading-snug">{question.question.questionText}</p>
+                        <span
+                            className={cn(
+                                'tabular shrink-0 rounded-full px-3 py-1 text-lg font-extrabold',
+                                answerTimer.secondsLeft <= 5 ? 'bg-rose-500' : 'bg-white/15',
                             )}
-                            <div className="space-y-4">
-                                <Input
-                                    placeholder="Game PIN"
-                                    value={pin}
-                                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                                    className="text-center text-2xl tracking-widest font-mono h-16"
-                                    inputMode="numeric"
-                                    maxLength={6}
-                                />
-                                <Input
-                                    placeholder="Nickname"
-                                    value={nickname}
-                                    onChange={(e) => setNickname(e.target.value)}
-                                    className="text-center text-xl h-14"
-                                    maxLength={30}
-                                    autoFocus={!!pin}
-                                />
-                                <Button
-                                    type="submit"
-                                    disabled={pin.length !== 6 || !nickname.trim()}
-                                    isLoading={joining}
-                                    className="w-full h-14 text-xl"
-                                >
-                                    Enter Game
-                                </Button>
-                            </div>
-                        </motion.form>
-                    </div>
-                )}
-
-                {view === 'lobby' && (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                        <motion.div
-                            animate={{ scale: [1, 1.1, 1] }}
-                            transition={{ repeat: Infinity, duration: 2 }}
-                            className="text-6xl mb-8"
                         >
-                            🎮
-                        </motion.div>
-                        <h2 className="text-3xl font-bold mb-4">You're in!</h2>
-                        <p className="text-xl text-white/60">See your name on screen?</p>
-                        <button onClick={handleLeave} className="mt-12 text-white/50 hover:text-white underline">
-                            Leave game
-                        </button>
+                            {answerTimer.secondsLeft}
+                        </span>
                     </div>
-                )}
 
-                {view === 'question' && question && (
-                    <div className="flex-1 flex flex-col p-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <div className="bg-white/10 px-4 py-2 rounded-full font-bold">
-                                {question.questionNumber}/{question.totalQuestions}
-                            </div>
-                            <div className="bg-white/10 px-4 py-2 rounded-full font-mono font-bold">
-                                {secondsLeft}s
-                            </div>
-                        </div>
-
-                        <p className="text-center text-xl font-bold mb-6">{question.question.questionText}</p>
-
-                        <div className="flex-1 flex flex-col justify-center">
-                            <div className="grid grid-cols-1 gap-4 h-full max-h-[60vh]">
-                                {question.question.answers.map((answer, index) => (
-                                    <motion.button
-                                        key={answer.id}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.1 }}
-                                        onClick={() => handleAnswer(answer.id)}
-                                        disabled={secondsLeft === 0}
-                                        className={`flex-1 rounded-2xl p-6 flex items-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 ${ANSWER_COLORS[index]}`}
-                                    >
-                                        <div className="w-10 h-10 bg-black/20 rounded-lg flex items-center justify-center text-xl font-bold mr-4">
-                                            {ANSWER_SHAPES[index]}
-                                        </div>
-                                        <span className="text-2xl font-bold text-left">{answer.answerText}</span>
-                                    </motion.button>
-                                ))}
-                            </div>
-                            {secondsLeft === 0 && (
-                                <p className="mt-6 text-center text-xl font-bold text-white/80">Time's up!</p>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {view === 'answered' && (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                        {selectedIndex >= 0 && (
-                            <div className={`w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-bold mb-8 shadow-xl ${ANSWER_COLORS[selectedIndex]}`}>
-                                {ANSWER_SHAPES[selectedIndex]}
-                            </div>
+                    <div
+                        className={cn(
+                            'grid flex-1 gap-3',
+                            question.question.answers.length > 2 ? 'grid-cols-2 grid-rows-2' : 'grid-cols-1 grid-rows-2',
                         )}
-                        {answerError ? (
-                            <h2 className="text-3xl font-bold">{answerError}</h2>
-                        ) : (
-                            <>
-                                <h2 className="text-3xl font-bold mb-4">Answer sent!</h2>
-                                <p className="text-xl text-white/60 animate-pulse">Waiting for everyone else...</p>
-                            </>
-                        )}
+                    >
+                        {question.question.answers.map((answer, index) => (
+                            <motion.button
+                                key={answer.id}
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ delay: index * 0.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleAnswer(answer.id)}
+                                disabled={timeUp}
+                                className={cn(
+                                    'flex min-h-28 flex-col items-center justify-center gap-3 rounded-2xl p-4 shadow-lg shadow-black/20 disabled:opacity-50 cursor-pointer',
+                                    ANSWER_COLORS[index],
+                                )}
+                            >
+                                <AnswerShape index={index} className="h-10 w-10 text-white" />
+                                <span className="text-lg font-bold leading-tight">{answer.answerText}</span>
+                            </motion.button>
+                        ))}
                     </div>
-                )}
+                    {timeUp && <p className="text-center text-xl font-bold text-white/80">Time's up!</p>}
+                </div>
+            )}
 
-                {view === 'result' && result && (
-                    <div className={`flex-1 flex flex-col items-center justify-center p-8 text-center ${result.isCorrect ? 'bg-green-600' : 'bg-red-600'}`}>
-                        <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="bg-white text-slate-900 rounded-full w-28 h-28 flex items-center justify-center mb-8 shadow-xl text-6xl"
-                        >
-                            {result.isCorrect ? '✓' : result.answered ? '✗' : '⏱'}
-                        </motion.div>
-                        <h2 className="text-4xl font-bold mb-4">
-                            {result.isCorrect ? 'Correct!' : result.answered ? 'Incorrect' : "Time's up"}
-                        </h2>
-                        <div className="bg-black/20 px-6 py-3 rounded-xl text-2xl font-bold">
-                            +{result.pointsEarned} points
-                        </div>
-                        {standing && <StandingText standing={standing} />}
-                    </div>
-                )}
+            {view === 'answered' && question && (
+                <PlayerAnsweredView selectedIndex={selectedIndex} error={answerError} questionId={question.question.id} />
+            )}
 
-                {view === 'finished' && (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                        <h1 className="text-4xl font-bold mb-2">Game Over</h1>
-                        {standing && (
-                            <div className="mb-8">
-                                <div className="text-6xl font-black my-4">{ordinal(standing.rank)}</div>
-                                <p className="text-xl text-white/70">
-                                    of {standing.totalPlayers} with {standing.totalPoints} points
-                                </p>
-                            </div>
-                        )}
-                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 w-full max-w-md">
-                            <h3 className="text-xl font-bold mb-4">Top Players</h3>
-                            {leaderboard.map((entry) => (
-                                <div
-                                    key={entry.playerName}
-                                    className={`flex justify-between items-center p-3 rounded-lg mb-2 ${entry.playerName === playerName ? 'bg-white/20 border border-white/30' : ''}`}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span className="font-bold">#{entry.rank}</span>
-                                        <span>{entry.playerName}</span>
-                                    </div>
-                                    <span className="font-mono font-bold">{entry.totalPoints}</span>
-                                </div>
-                            ))}
-                        </div>
-                        <Button onClick={playAgain} className="mt-8 bg-white text-slate-900 hover:bg-slate-100">
-                            Join another game
-                        </Button>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
+            {view === 'result' && result && <PlayerResultView result={result} standing={standing} />}
 
-const StandingText: React.FC<{ standing: PlayerStanding }> = ({ standing }) => {
-    const { rank, behind, totalPoints } = standing;
-    let detail = '';
-    if (rank === 1) detail = "You're in the lead!";
-    else if (behind && behind.points > 0) detail = `${behind.points} points behind ${behind.playerName}`;
-    else if (behind) detail = `Tied with ${behind.playerName}`;
-
-    return (
-        <div className="mt-10">
-            <p className="text-2xl font-bold">You're in {ordinal(rank)} place</p>
-            {detail && <p className="text-lg text-white/80 mt-2">{detail}</p>}
-            <p className="text-white/60 mt-1">{totalPoints} points total</p>
-        </div>
+            {view === 'finished' && (
+                <PlayerFinishedView
+                    playerName={playerName}
+                    standing={standing}
+                    summary={summary}
+                    leaderboard={leaderboard}
+                    onPlayAgain={playAgain}
+                />
+            )}
+        </GameBackground>
     );
 };
 

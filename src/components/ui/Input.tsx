@@ -4,39 +4,44 @@ import { cn } from '../../lib/utils';
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string;
     error?: string;
+    hint?: string;
     icon?: React.ReactNode;
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-    ({ className, label, error, icon, ...props }, ref) => {
+    ({ className, label, error, hint, icon, id, ...props }, ref) => {
+        const generatedId = React.useId();
+        const inputId = id ?? generatedId;
+
         return (
-            <div className="w-full space-y-2">
+            <div className="w-full space-y-1.5">
                 {label && (
-                    <label className="text-sm font-medium text-slate-700 ml-1">
+                    <label htmlFor={inputId} className="block text-sm font-semibold text-slate-700">
                         {label}
                     </label>
                 )}
                 <div className="relative group">
                     {icon && (
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                        <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-600 transition-colors">
                             {icon}
                         </div>
                     )}
                     <input
                         ref={ref}
+                        id={inputId}
                         className={cn(
-                            'flex h-11 w-full rounded-xl border border-slate-200 bg-white/50 backdrop-blur-sm px-4 py-2 text-sm text-slate-900 ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200',
-                            icon && 'pl-10',
-                            error && 'border-red-500 focus-visible:ring-red-500/50 focus-visible:border-red-500',
+                            'flex h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-[15px] text-slate-900 shadow-sm shadow-slate-900/[0.02] placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/15 focus-visible:border-brand-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-150',
+                            icon && 'pl-11',
+                            error && 'border-red-400 focus-visible:ring-red-500/15 focus-visible:border-red-500',
                             className
                         )}
                         {...props}
                     />
                 </div>
-                {error && (
-                    <p className="text-sm text-red-500 ml-1 animate-in slide-in-from-top-1 fade-in">
-                        {error}
-                    </p>
+                {error ? (
+                    <p className="text-sm text-red-600">{error}</p>
+                ) : (
+                    hint && <p className="text-xs text-slate-500">{hint}</p>
                 )}
             </div>
         );
