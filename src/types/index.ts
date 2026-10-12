@@ -81,6 +81,7 @@ export interface QuestionResults {
     answeredCount: number;
     totalPlayers: number;
     leaderboard: LeaderboardEntry[]; // top 5
+    voided: boolean; // the host took back everyone's points for it
 }
 
 export interface GameFinishedPayload {
@@ -122,6 +123,7 @@ export interface PlayerResult {
     streakBonus: number;
     firstBonus: number;
     streak: number; // correct answers in a row, including this one
+    voided: boolean; // the host removed this question, so it earned no points
     correctAnswers: { answerText: string; index: number }[];
 }
 

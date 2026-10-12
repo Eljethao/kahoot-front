@@ -155,6 +155,7 @@ const PlayGame: React.FC = () => {
             .subscribeAsPlayer(sessionId, {
                 onQuestion: (payload) => showQuestion(payload),
                 onQuestionEnded: reloadSoon,
+                onQuestionVoided: reloadSoon,
                 onGameFinished: reloadSoon,
                 onPlayerKicked: (name) => {
                     if (name === playerNameRef.current) backToJoin('The host removed you from the game.');
@@ -425,7 +426,10 @@ const PlayGame: React.FC = () => {
                 <PlayerAnsweredView selectedIndex={selectedIndex} error={answerError} questionId={question.question.id} />
             )}
 
-            {view === 'result' && result && <PlayerResultView result={result} standing={standing} />}
+            {view === 'result' && result && (
+                // Keyed so the screen animates in again if the host removes the question.
+                <PlayerResultView key={result.voided ? 'voided' : 'scored'} result={result} standing={standing} />
+            )}
 
             {view === 'finished' && (
                 <PlayerFinishedView

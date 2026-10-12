@@ -9,6 +9,9 @@
 // login printed. The test quiz is deleted at the end, which also deletes the
 // game, its players and their answers.
 //
+// The host voids question VOID_QUESTION ("Don't count"), to check that its
+// points are taken back everywhere and that streaks carry on past it.
+//
 // Each bot opens its own Realtime connection, so keep players + other open
 // screens under the plan's connection limit (200 on the free plan).
 import { createClient } from '@supabase/supabase-js';
@@ -22,6 +25,7 @@ const SUPABASE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const PLAYERS = Number(process.argv[2] ?? 10);
 const JOINS_PER_SECOND = 10; // the free plan allows 100 channel joins per second
 const AVATAR_STYLES = ['fun-emoji', 'personas', 'big-smile', 'bottts'];
+const VOID_QUESTION = 3; // question number the host voids; 0 for none
 
 const QUIZ = [
     { text: 'Which planet is known as the Red Planet?', answers: ['Venus', 'Mars', 'Jupiter', 'Saturn'], correct: 1 },
@@ -135,12 +139,20 @@ class Bot {
         this.avatar = `${AVATAR_STYLES[index % AVATAR_STYLES.length]}:${this.name}`;
         this.ready = false;
         this.questionsSeen = new Set();
+        this.questionOrder = []; // question ids in the order they were shown
         this.answers = new Map(); // question id -> answer id
-        this.results = new Map(); // question id -> PlayerResult
+        this.results = new Map(); // question id -> PlayerResult (fetched again if voided)
         this.currentQuestionId = null;
-        this.totalPoints = 0;
-        this.correctCount = 0;
         this.finished = false;
+    }
+
+    get totalPoints() {
+        return [...this.results.values()].reduce((sum, r) => sum + r.pointsEarned, 0);
+    }
+
+    // Questions that still count, in order.
+    get counted() {
+        return this.questionOrder.filter((id) => this.results.has(id) && !this.results.get(id).voided);
     }
 
     async join(pin) {
@@ -155,6 +167,7 @@ class Bot {
         await subscribe(this.client, this.name, `game:${joined.sessionId}`, {
             question: (payload) => this.onQuestion(payload),
             questionEnded: () => setTimeout(() => void this.fetchResult(), Math.random() * 400),
+            questionVoided: () => setTimeout(() => void this.fetchResult(), Math.random() * 400),
             gameFinished: () => setTimeout(() => void this.fetchFinal(), Math.random() * 400),
             playerKicked: (payload) => {
                 if (payload.playerName === this.name) fail(this.name, 'was kicked');
@@ -170,6 +183,7 @@ class Bot {
     onQuestion(payload) {
         const question = payload.question;
         this.currentQuestionId = question.id;
+        if (!this.questionsSeen.has(question.id)) this.questionOrder.push(question.id);
         this.questionsSeen.add(question.id);
         for (const answer of question.answers) {
             if ('isCorrect' in answer || 'is_correct' in answer) {
@@ -230,11 +244,17 @@ class Bot {
             expect(r.answered === this.answers.has(questionId), who, `answered=${r.answered} but the bot ${this.answers.has(questionId) ? 'did' : 'did not'} answer`);
             const parts = r.basePoints + r.speedBonus + r.streakBonus + r.firstBonus;
             expect(parts === r.pointsEarned, who, `bonuses add up to ${parts}, pointsEarned is ${r.pointsEarned}`);
-            expect(r.isCorrect ? r.pointsEarned > 0 : r.pointsEarned === 0, who, `isCorrect=${r.isCorrect} with ${r.pointsEarned} points`);
+            if (r.voided) {
+                expect(r.pointsEarned === 0 && r.streak === 0, who, `voided question still gave ${r.pointsEarned} points, streak ${r.streak}`);
+            } else {
+                expect(r.isCorrect ? r.pointsEarned > 0 : r.pointsEarned === 0, who, `isCorrect=${r.isCorrect} with ${r.pointsEarned} points`);
+                // Streaks skip voided questions.
+                const previous = this.results.get(this.counted.filter((id) => id !== questionId).at(-1));
+                const expected = r.isCorrect ? (previous?.isCorrect ? previous.streak : 0) + 1 : 0;
+                expect(r.streak === expected, who, `streak ${r.streak}, expected ${expected}`);
+            }
             expect(r.correctAnswers.length > 0, who, 'no correct answers shown');
 
-            this.totalPoints += r.pointsEarned;
-            if (r.isCorrect) this.correctCount++;
             this.results.set(questionId, r);
             expect(state.standing?.totalPoints === this.totalPoints, who, `total is ${state.standing?.totalPoints}, the bot counted ${this.totalPoints}`);
         } catch (error) {
@@ -248,9 +268,12 @@ class Bot {
             const state = await rpc(this.client, 'get_player_state', { p_player_token: this.token });
             if (!expect(state.phase === 'finished', who, `phase is ${state.phase}, expected finished`)) return;
             const s = state.summary;
-            expect(s?.totalQuestions === QUIZ.length, who, `summary has ${s?.totalQuestions} questions`);
-            expect(s?.answeredCount === this.answers.size, who, `summary says ${s?.answeredCount} answered, the bot answered ${this.answers.size}`);
-            expect(s?.correctCount === this.correctCount, who, `summary says ${s?.correctCount} correct, results said ${this.correctCount}`);
+            const counted = this.counted;
+            const answered = counted.filter((id) => this.answers.has(id)).length;
+            const correct = counted.filter((id) => this.results.get(id).isCorrect).length;
+            expect(s?.totalQuestions === QUIZ.length - (VOID_QUESTION ? 1 : 0), who, `summary has ${s?.totalQuestions} questions`);
+            expect(s?.answeredCount === answered, who, `summary says ${s?.answeredCount} answered, the bot answered ${answered} that count`);
+            expect(s?.correctCount === correct, who, `summary says ${s?.correctCount} correct, results said ${correct}`);
             expect(state.standing?.totalPoints === this.totalPoints, who, `final total ${state.standing?.totalPoints}, the bot counted ${this.totalPoints}`);
             this.finished = true;
         } catch (error) {
@@ -365,7 +388,23 @@ async function main() {
                     expect(result.isCorrect === results.correctAnswerIds.includes(answerId), bot.name, `Q${n} isCorrect=${result.isCorrect} disagrees with the host`);
                 }
             }
-            for (const row of results.leaderboard) {
+            let board = results.leaderboard;
+            if (n === VOID_QUESTION) {
+                const before = new Map(ready.map((bot) => [bot.name, bot.totalPoints - (bot.results.get(questionId)?.pointsEarned ?? 0)]));
+                const voided = await rpc(host, 'void_question', { p_session_id: session.id });
+                log(`Q${n}: host pressed "Don't count"`);
+                expect(voided.voided === true, `host Q${n}`, 'void_question did not return voided: true');
+                expect(voided.answeredCount === results.answeredCount, `host Q${n}`, 'answer counts changed after voiding');
+                for (const row of voided.leaderboard) {
+                    expect(row.lastPoints === 0 && row.rank === row.previousRank, 'host', `Q${n} voided scoreboard: ${row.playerName} +${row.lastPoints}, rank ${row.previousRank}→${row.rank}`);
+                    expect(row.totalPoints === before.get(row.playerName), 'host', `Q${n} voided: ${row.playerName} has ${row.totalPoints}, expected ${before.get(row.playerName)}`);
+                }
+                // Every phone hears questionVoided and fetches its result again.
+                const voidedIn = await waitUntil(() => ready.every((bot) => bot.results.get(questionId)?.voided), 8000);
+                expect(voidedIn, `Q${n}`, `not told about the void: ${ready.filter((b) => !b.results.get(questionId)?.voided).map((b) => b.name).join(', ')}`);
+                board = voided.leaderboard;
+            }
+            for (const row of board) {
                 const bot = ready.find((b) => b.name === row.playerName);
                 expect(bot?.totalPoints === row.totalPoints, 'host', `Q${n} scoreboard shows ${row.playerName} with ${row.totalPoints}, the bot has ${bot?.totalPoints}`);
             }

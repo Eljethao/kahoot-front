@@ -114,6 +114,12 @@ export const gameService = {
         return rpc<QuestionPayload | GameFinishedPayload>('next_question', { p_session_id: sessionId });
     },
 
+    // Takes back everyone's points for the question that just ended (when its
+    // correct answer was set wrong). Only works between endQuestion and nextQuestion.
+    async voidQuestion(sessionId: string): Promise<QuestionResults> {
+        return rpc<QuestionResults>('void_question', { p_session_id: sessionId });
+    },
+
     async endGame(sessionId: string): Promise<GameFinishedPayload> {
         return rpc<GameFinishedPayload>('end_game', { p_session_id: sessionId });
     },
@@ -167,12 +173,13 @@ export const gameService = {
         await rpc('leave_game', { p_player_token: playerToken });
     },
 
-    // questionEnded and gameFinished carry no results; call getPlayerState.
+    // questionEnded, questionVoided and gameFinished carry no results; call getPlayerState.
     subscribeAsPlayer(
         sessionId: string,
         handlers: {
             onQuestion: (data: QuestionPayload) => void;
             onQuestionEnded: () => void;
+            onQuestionVoided: () => void;
             onGameFinished: () => void;
             onPlayerKicked: (playerName: string) => void;
             onReconnect: () => void;
@@ -183,6 +190,7 @@ export const gameService = {
             {
                 question: handlers.onQuestion,
                 questionEnded: () => handlers.onQuestionEnded(),
+                questionVoided: () => handlers.onQuestionVoided(),
                 gameFinished: () => handlers.onGameFinished(),
                 playerKicked: (data: { playerName: string }) => handlers.onPlayerKicked(data.playerName),
             },

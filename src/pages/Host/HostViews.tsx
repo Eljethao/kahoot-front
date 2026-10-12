@@ -1,7 +1,7 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Check, Play, Users, X, Zap } from 'lucide-react';
+import { ArrowRight, Ban, Check, Play, Users, X, Zap } from 'lucide-react';
 import type { LobbyPlayer, QuestionPayload, QuestionResults } from '../../types';
 import { ANSWER_COLORS } from '../../lib/answerStyles';
 import { cn } from '../../lib/utils';
@@ -247,15 +247,29 @@ export const HostAnswerResults: React.FC<{
 }> = ({ question, results, busy, isLastQuestion, onNext }) => {
     const countFor = (answerId: string) => results.answerCounts.find((c) => c.answerId === answerId)?.count ?? 0;
     const maxCount = Math.max(1, ...results.answerCounts.map((c) => c.count));
+    // Once the question is voided its marked answer is known to be wrong, so
+    // no answer is shown as right or wrong.
+    const isCorrect = (answerId: string) => !results.voided && results.correctAnswerIds.includes(answerId);
+    const dimmed = (answerId: string) => !results.voided && !isCorrect(answerId);
 
     return (
         <div className="flex-1 flex flex-col gap-6 px-4 sm:px-8 pb-6">
             <QuestionCard text={question.question.questionText} small />
 
+            {results.voided && (
+                <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mx-auto flex items-center gap-2 rounded-full bg-black/30 px-5 py-2 text-center text-lg font-bold"
+                >
+                    <Ban className="h-5 w-5 shrink-0" /> Not counted: nobody gets points for this question
+                </motion.div>
+            )}
+
             <div className="mx-auto flex w-full max-w-4xl flex-1 items-end justify-center gap-4 sm:gap-8">
                 {question.question.answers.map((answer, index) => {
                     const count = countFor(answer.id);
-                    const correct = results.correctAnswerIds.includes(answer.id);
+                    const correct = isCorrect(answer.id);
                     return (
                         <div key={answer.id} className="flex w-20 sm:w-32 flex-col items-center justify-end">
                             <motion.div
@@ -271,9 +285,9 @@ export const HostAnswerResults: React.FC<{
                                 initial={{ height: 0 }}
                                 animate={{ height: Math.max(6, (count / maxCount) * MAX_BAR_PX) }}
                                 transition={{ duration: 0.7, delay: index * 0.1, ease: 'easeOut' }}
-                                className={cn('w-full rounded-t-xl', ANSWER_COLORS[index], !correct && 'opacity-35')}
+                                className={cn('w-full rounded-t-xl', ANSWER_COLORS[index], dimmed(answer.id) && 'opacity-35')}
                             />
-                            <div className={cn('flex w-full items-center justify-center rounded-b-xl py-2', ANSWER_COLORS[index], !correct && 'opacity-35')}>
+                            <div className={cn('flex w-full items-center justify-center rounded-b-xl py-2', ANSWER_COLORS[index], dimmed(answer.id) && 'opacity-35')}>
                                 <AnswerShape index={index} className="h-6 w-6 text-white" />
                             </div>
                         </div>
@@ -283,17 +297,18 @@ export const HostAnswerResults: React.FC<{
 
             <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-3 md:grid-cols-2">
                 {question.question.answers.map((answer, index) => {
-                    const correct = results.correctAnswerIds.includes(answer.id);
+                    const correct = isCorrect(answer.id);
+                    const dim = dimmed(answer.id);
                     return (
                         <motion.div
                             key={answer.id}
-                            animate={{ opacity: correct ? 1 : 0.35, scale: correct ? 1 : 0.98 }}
+                            animate={{ opacity: dim ? 0.35 : 1, scale: dim ? 0.98 : 1 }}
                             transition={{ delay: 0.8 }}
                             className={cn('flex items-center gap-4 rounded-2xl px-5 py-4 shadow-lg shadow-black/20', ANSWER_COLORS[index])}
                         >
                             <AnswerShape index={index} className="h-7 w-7 shrink-0 text-white" />
                             <span className="flex-1 text-xl sm:text-2xl font-bold">{answer.answerText}</span>
-                            {correct ? <Check className="h-8 w-8" strokeWidth={4} /> : <X className="h-7 w-7" strokeWidth={4} />}
+                            {correct ? <Check className="h-8 w-8" strokeWidth={4} /> : !results.voided && <X className="h-7 w-7" strokeWidth={4} />}
                         </motion.div>
                     );
                 })}

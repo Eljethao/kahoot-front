@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown, ChevronUp, Clock, Medal, Shuffle, Trophy, X } from 'lucide-react';
+import { Ban, Check, ChevronDown, ChevronUp, Clock, Medal, Shuffle, Trophy, X } from 'lucide-react';
 import type { LeaderboardEntry, PlayerResult, PlayerStanding, PlayerSummary } from '../../types';
 import { ANSWER_COLORS } from '../../lib/answerStyles';
 import { AVATAR_STYLES, type AvatarStyleKey, parseAvatar, randomSeed, toAvatar } from '../../lib/avatars';
@@ -85,9 +85,12 @@ const StandingLine: React.FC<{ standing: PlayerStanding }> = ({ standing }) => {
 };
 
 export const PlayerResultView: React.FC<{ result: PlayerResult; standing: PlayerStanding | null }> = ({ result, standing }) => {
-    const tone = result.isCorrect ? 'bg-emerald-600' : result.answered ? 'bg-rose-600' : 'bg-slate-700';
-    const title = result.isCorrect ? 'Correct!' : result.answered ? 'Incorrect' : "Time's up";
-    const showCorrectAnswer = !result.isCorrect && result.correctAnswers.length > 0;
+    // The host removed the question (its correct answer was set wrong), so
+    // whether this player was "right" means nothing.
+    const { voided } = result;
+    const tone = voided ? 'bg-slate-700' : result.isCorrect ? 'bg-emerald-600' : result.answered ? 'bg-rose-600' : 'bg-slate-700';
+    const title = voided ? 'Not counted' : result.isCorrect ? 'Correct!' : result.answered ? 'Incorrect' : "Time's up";
+    const showCorrectAnswer = !voided && !result.isCorrect && result.correctAnswers.length > 0;
 
     return (
         <div className={cn('flex-1 flex flex-col items-center justify-center px-6 py-10 text-center', tone)}>
@@ -97,7 +100,9 @@ export const PlayerResultView: React.FC<{ result: PlayerResult; standing: Player
                 transition={{ type: 'spring', stiffness: 260, damping: 16 }}
                 className="flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-xl"
             >
-                {result.isCorrect ? (
+                {voided ? (
+                    <Ban className="h-12 w-12 text-slate-700" strokeWidth={3} />
+                ) : result.isCorrect ? (
                     <Check className="h-14 w-14 text-emerald-600" strokeWidth={4} />
                 ) : result.answered ? (
                     <X className="h-14 w-14 text-rose-600" strokeWidth={4} />
@@ -114,7 +119,11 @@ export const PlayerResultView: React.FC<{ result: PlayerResult; standing: Player
                 {title}
             </motion.h2>
 
-            {result.isCorrect ? (
+            {voided ? (
+                <p className="mt-3 max-w-xs text-lg font-semibold text-white/80">
+                    The host removed this question. Nobody gets points for it.
+                </p>
+            ) : result.isCorrect ? (
                 <motion.div
                     initial={{ scale: 0.6, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}

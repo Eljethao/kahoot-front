@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { ArrowRight, Ban, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { gameService, isNotFound, questionTimes } from '../../services/gameService';
 import { useCountdown } from '../../hooks/useCountdown';
 import { useSoundState } from '../../hooks/useSoundState';
@@ -30,6 +30,7 @@ const HostGame: React.FC = () => {
     const [actionError, setActionError] = useState('');
     const [showScoreboard, setShowScoreboard] = useState(false);
     const [confirmingEnd, setConfirmingEnd] = useState(false);
+    const [confirmingVoid, setConfirmingVoid] = useState(false);
     const [busy, setBusy] = useState(false);
     const answerTimer = useCountdown(); // until the question closes
     const introTimer = useCountdown(); // until answers open
@@ -234,6 +235,12 @@ const HostGame: React.FC = () => {
         return () => clearTimeout(timer);
     }, [confirmingEnd]);
 
+    useEffect(() => {
+        if (!confirmingVoid) return;
+        const timer = setTimeout(() => setConfirmingVoid(false), 4000);
+        return () => clearTimeout(timer);
+    }, [confirmingVoid]);
+
     const runHostAction = async (action: (sessionId: string) => Promise<void>) => {
         if (!sessionId || busy) return;
         setBusy(true);
@@ -264,6 +271,21 @@ const HostGame: React.FC = () => {
             await gameService.endGame(id);
             navigate('/dashboard');
         });
+
+    // For a question whose correct answer was set wrong: everyone's points for
+    // it are taken back, and players' screens say it wasn't counted.
+    const voidQuestion = () => {
+        if (!confirmingVoid) {
+            setConfirmingVoid(true);
+            return;
+        }
+        setConfirmingVoid(false);
+        void runHostAction(async (id) => {
+            const voided = await gameService.voidQuestion(id);
+            versionRef.current++;
+            setState((s) => s && { ...s, results: voided });
+        });
+    };
 
     const endGameEarly = () => {
         if (!confirmingEnd) {
@@ -327,6 +349,18 @@ const HostGame: React.FC = () => {
                         {muted || !soundReady ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                         {!soundReady && !muted && <span className="hidden sm:inline">Enable sound</span>}
                     </Button>
+                    {(view === 'results' || view === 'scoreboard') && results && !results.voided && (
+                        <Button
+                            variant={confirmingVoid ? 'danger' : 'glass'}
+                            size="sm"
+                            disabled={busy}
+                            onClick={voidQuestion}
+                            title="Take back everyone's points for this question, e.g. if its correct answer was set wrong"
+                        >
+                            <Ban className="w-4 h-4" />
+                            {confirmingVoid ? 'Click to remove its points' : "Don't count"}
+                        </Button>
+                    )}
                     {view === 'question' && (
                         <Button variant="glass" size="sm" onClick={() => void endQuestion()}>
                             Skip <SkipForward className="w-4 h-4" />
@@ -379,6 +413,11 @@ const HostGame: React.FC = () => {
                     >
                         Scoreboard
                     </motion.h2>
+                    {results.voided && question && (
+                        <p className="-mt-5 mb-6 flex items-center gap-2 font-semibold text-white/70">
+                            <Ban className="h-4 w-4" /> Question {question.questionNumber} was not counted
+                        </p>
+                    )}
                     <Scoreboard key={results.questionId} entries={results.leaderboard} reorder onReorder={sound.whoosh} />
                     <Button variant="light" size="lg" className="mt-10" onClick={advance} disabled={busy}>
                         Next question <ArrowRight className="w-5 h-5" />
